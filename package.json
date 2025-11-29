@@ -1,0 +1,13 @@
+{
+  "name": "mfasweep-automation",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Helper automation scripts for MFASweep",
+  "main": "automation/playwright-login.js",
+  "scripts": {
+    "playwright": "playwright test"
+  },
+  "dependencies": {
+    "playwright": "^1.47.0"
+  }
+}
