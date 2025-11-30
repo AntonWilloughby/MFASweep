@@ -422,7 +422,7 @@ Function Invoke-M365WebPortalAuthPlaywright {
     if ($playwrightResult.mfaRequired) {
         Write-Host -ForegroundColor Red "[**] MFA prompts were detected for this session."
     }
-    elseif ($estsauthCookie -or $playwrightResult.finalUrl -like "*outlook.office.com*") {
+    elseif ($playwrightResult.success -eq $true) {
         Write-Host -ForegroundColor Cyan "[**] It appears there is no MFA required for this account (Chromium)."
         Write-Host -ForegroundColor DarkGreen "[***] NOTE: Login with a browser using a user agent that matches $UAtype."
 

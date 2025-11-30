@@ -159,32 +159,82 @@ async function automateLogin() {
       page.click('input[type="submit"]')
     ]);
 
-    await page.waitForTimeout(2000);
+    // Wait longer and check multiple times for page to settle
+    await page.waitForTimeout(4000);
 
-    const staySignedInPrompt = await page.locator('text=Stay signed in?').first().count();
-    if (staySignedInPrompt > 0) {
-      const noButton = page.locator('#idBtn_Back');
-      if (await noButton.count() > 0) {
-        await noButton.click().catch(() => {});
-      }
-      else {
-        const yesButton = page.locator('#idSIButton9');
-        await yesButton.click().catch(() => {});
-      }
-      await page.waitForTimeout(2000);
-    }
-
+    // Check for MFA indicators - comprehensive list
     const mfaIndicators = [
       'text=Enter code',
       'text=Approve a request',
+      'text=Verify your identity',
+      'text=More information required',
+      'text=Approve sign in',
+      'text=Use your authenticator app',
       '#idDiv_SAOTCAS_Proofs',
       '#idDiv_SAOTCS_Description',
-      '#OtcEntry'
+      '#OtcEntry',
+      '#idDiv_SAOTCC_Description',
+      '#idA_PWD_SwitchToCredPicker',
+      'div[data-bind*="showMfaSetup"]',
+      '[role="heading"]:has-text("Verify")',
+      '[role="heading"]:has-text("Approve")'
     ];
+    
     for (const selector of mfaIndicators) {
       if (await page.locator(selector).first().count() > 0) {
         result.mfaRequired = true;
         break;
+      }
+    }
+
+    // Check URL for MFA-related paths
+    const currentUrl = page.url();
+    
+    // If still on login page and not progressing, likely MFA is blocking
+    if (currentUrl.includes('/common/login') && !currentUrl.includes('/kmsi')) {
+      // Wait a bit more to see if it's just slow
+      await page.waitForTimeout(3000);
+      const urlAfterWait = page.url();
+      
+      // If still stuck on login page, check for MFA prompts or assume MFA is blocking
+      if (urlAfterWait.includes('/common/login')) {
+        // Re-check for MFA indicators
+        for (const selector of mfaIndicators) {
+          if (await page.locator(selector).first().count() > 0) {
+            result.mfaRequired = true;
+            break;
+          }
+        }
+        
+        // If we don't see explicit MFA UI but we're stuck, check page content
+        if (!result.mfaRequired) {
+          const pageText = await page.textContent('body').catch(() => '');
+          if (pageText.includes('verify') || pageText.includes('authentication') || 
+              pageText.includes('security code') || pageText.includes('authenticator')) {
+            result.mfaRequired = true;
+          }
+        }
+      }
+    }
+    
+    if (currentUrl.includes('/proofs') || currentUrl.includes('/mfa') || 
+        currentUrl.includes('/authenticate')) {
+      result.mfaRequired = true;
+    }
+
+    // Only try to handle "Stay signed in" if we haven't detected MFA
+    if (!result.mfaRequired) {
+      const staySignedInPrompt = await page.locator('text=Stay signed in?').first().count();
+      if (staySignedInPrompt > 0) {
+        const noButton = page.locator('#idBtn_Back');
+        if (await noButton.count() > 0) {
+          await noButton.click().catch(() => {});
+        }
+        else {
+          const yesButton = page.locator('#idSIButton9');
+          await yesButton.click().catch(() => {});
+        }
+        await page.waitForTimeout(2000);
       }
     }
 
@@ -197,8 +247,13 @@ async function automateLogin() {
     const hasEstsAuth = cookies.some((cookie) => cookie.name === 'ESTSAUTH');
     const reachedOutlook = result.finalUrl && result.finalUrl.includes('outlook.office.com');
 
-    if (hasEstsAuth || reachedOutlook || result.mfaRequired) {
+    // Success means single-factor access worked (reached Outlook without MFA prompts)
+    if ((hasEstsAuth || reachedOutlook) && !result.mfaRequired) {
       result.success = true;
+    }
+    else if (result.mfaRequired) {
+      result.success = false;
+      result.error = 'MFA prompt detected';
     }
     else {
       result.error = 'Did not observe successful Outlook session.';
